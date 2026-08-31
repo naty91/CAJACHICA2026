@@ -1,15 +1,15 @@
-# CAJACHICA2026 - PLUS listas rápidas
+# CAJACHICA2026 - PDF vertical corregido
 
-Novedades:
-- Lista rápida de personas solicitantes basada en el listado de personal entregado.
-- Lista rápida de descripciones basada en los movimientos reales de Caja Chica Administrativa.
-- Persona y descripción siguen siendo editables: puedes escoger o escribir/agregar otra.
-- Catálogos editables: agregar y quitar personas/descripciones.
-- Al cargar planilla, la app aprende personas y descripciones nuevas.
-- El respaldo JSON guarda también las listas personalizadas.
-- Mantiene registro directo, carga Excel/CSV, cuadre, respaldo, Excel y PDF.
+Cambios:
+- PDF A4 vertical.
+- Texto de descripción y persona se ajusta en varias líneas.
+- Columnas proporcionadas para evitar superposición.
+- En el PDF se muestra el nombre de la persona sin el cargo para ahorrar espacio; en la app el cargo se conserva.
+- Encabezados compactos y filas alternadas.
+- Mantiene registro directo, listas editables, planilla, respaldo, Excel y PDF.
 
-Para Streamlit:
-- subir streamlit_app.py
-- subir requirements.txt
-- ruta principal: streamlit_app.py
+Subir a GitHub:
+- streamlit_app.py
+- requirements.txt
+
+Ruta de Streamlit: streamlit_app.py

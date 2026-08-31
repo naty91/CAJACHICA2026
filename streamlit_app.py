@@ -255,31 +255,76 @@ def restaurar_respaldo(uploaded):
 # ============================================================
 def generar_pdf(detalle, fondo, total_gastos, saldo_teorico,
                 efectivo, vales, otros, soporte_fisico, diferencia, nombre_caja):
+    """Genera PDF A4 VERTICAL, con texto envuelto y tabla ordenada."""
     buffer = BytesIO()
     doc = SimpleDocTemplate(
         buffer,
-        pagesize=landscape(A4),
-        rightMargin=1.2*cm,
-        leftMargin=1.2*cm,
-        topMargin=1.2*cm,
-        bottomMargin=1.2*cm,
+        pagesize=A4,
+        rightMargin=0.8*cm,
+        leftMargin=0.8*cm,
+        topMargin=0.8*cm,
+        bottomMargin=1.0*cm,
         title="Cuadre de Caja"
     )
 
     styles = getSampleStyleSheet()
     titulo = ParagraphStyle(
         "TituloCaja", parent=styles["Title"],
-        alignment=TA_CENTER, fontSize=18, leading=22, spaceAfter=8
+        alignment=TA_CENTER, fontSize=15, leading=18, spaceAfter=3
     )
     subtitulo = ParagraphStyle(
         "SubtituloCaja", parent=styles["BodyText"],
-        alignment=TA_CENTER, fontSize=10, leading=13, spaceAfter=10
+        alignment=TA_CENTER, fontSize=8.5, leading=10, spaceAfter=8
     )
+    h2 = ParagraphStyle(
+        "H2Caja", parent=styles["Heading2"],
+        fontSize=10, leading=12, spaceBefore=2, spaceAfter=5
+    )
+    cell = ParagraphStyle(
+        "CellCaja", parent=styles["BodyText"],
+        fontSize=6.8, leading=8.2, spaceAfter=0, spaceBefore=0
+    )
+    cell_center = ParagraphStyle(
+        "CellCenter", parent=cell, alignment=TA_CENTER
+    )
+    cell_money = ParagraphStyle(
+        "CellMoney", parent=cell, alignment=2
+    )
+    head = ParagraphStyle(
+        "HeadCaja", parent=cell,
+        fontName="Helvetica-Bold", textColor=colors.white,
+        fontSize=6.6, leading=7.6, alignment=TA_CENTER
+    )
+    summary_label = ParagraphStyle(
+        "SummaryLabel", parent=styles["BodyText"], fontSize=8, leading=9.5
+    )
+    summary_value = ParagraphStyle(
+        "SummaryValue", parent=summary_label, alignment=2
+    )
+    summary_bold = ParagraphStyle(
+        "SummaryBold", parent=summary_label, fontName="Helvetica-Bold"
+    )
+
+    def P(text, style=cell):
+        # Escapar caracteres básicos para Paragraph XML
+        s = str(text if text is not None else "")
+        s = s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+        # Los guiones largos pueden dar problemas en algunos visores; normalizamos.
+        s = s.replace("—", "-").replace("–", "-")
+        return Paragraph(s, style)
+
+    def nombre_para_reporte(texto):
+        """En el PDF prioriza el nombre; el cargo sigue existiendo en la app."""
+        s = str(texto or "").strip().replace("—", "-")
+        # Si fue guardado como NOMBRE - CARGO, quita solo el cargo para ganar espacio.
+        if " - " in s:
+            return s.split(" - ", 1)[0].strip()
+        return s
 
     elementos = [
         Paragraph("CUADRE AUTOMÁTICO DE CAJA CHICA", titulo),
         Paragraph(
-            f"{nombre_caja} · Fecha de emisión: {date.today().strftime('%d/%m/%Y')}",
+            f"{nombre_caja} - Fecha de emisión: {date.today().strftime('%d/%m/%Y')}",
             subtitulo
         )
     ]
@@ -294,60 +339,83 @@ def generar_pdf(detalle, fondo, total_gastos, saldo_teorico,
         estado = f"FALTANTE: {money(abs(diferencia))}"
         bg = colors.HexColor("#F4CCCC")
 
+    # Resumen compacto: una sola tabla de 4 columnas que cabe bien en vertical.
     resumen = [
-        ["CONCEPTO", "VALOR", "CONCEPTO", "VALOR"],
-        ["Fondo inicial", money(fondo), "Total gastos", money(total_gastos)],
-        ["Saldo teórico", money(saldo_teorico), "Efectivo contado", money(efectivo)],
-        ["Vales pendientes", money(vales), "Otros soportes", money(otros)],
-        ["Soporte físico", money(soporte_fisico), "Diferencia", money(diferencia)],
-        ["ESTADO DEL CUADRE", estado, "", ""],
+        [P("CONCEPTO", head), P("VALOR", head), P("CONCEPTO", head), P("VALOR", head)],
+        [P("Fondo inicial", summary_label), P(money(fondo), summary_value),
+         P("Total gastos", summary_label), P(money(total_gastos), summary_value)],
+        [P("Saldo teórico", summary_label), P(money(saldo_teorico), summary_value),
+         P("Efectivo contado", summary_label), P(money(efectivo), summary_value)],
+        [P("Vales pendientes", summary_label), P(money(vales), summary_value),
+         P("Otros soportes", summary_label), P(money(otros), summary_value)],
+        [P("Soporte físico", summary_label), P(money(soporte_fisico), summary_value),
+         P("Diferencia", summary_label), P(money(diferencia), summary_value)],
+        [P("ESTADO DEL CUADRE", summary_bold), P(estado, summary_bold), "", ""],
     ]
 
-    t = Table(resumen, colWidths=[4.4*cm, 3.3*cm, 4.4*cm, 3.3*cm])
+    t = Table(
+        resumen,
+        colWidths=[4.15*cm, 2.55*cm, 4.15*cm, 2.55*cm],
+        hAlign="CENTER"
+    )
     t.setStyle(TableStyle([
         ("BACKGROUND", (0,0), (-1,0), colors.HexColor("#1F4E78")),
         ("TEXTCOLOR", (0,0), (-1,0), colors.white),
-        ("FONTNAME", (0,0), (-1,0), "Helvetica-Bold"),
-        ("GRID", (0,0), (-1,-1), 0.5, colors.grey),
-        ("ALIGN", (1,1), (1,-1), "RIGHT"),
-        ("ALIGN", (3,1), (3,-1), "RIGHT"),
+        ("GRID", (0,0), (-1,-1), 0.45, colors.HexColor("#8A8A8A")),
+        ("VALIGN", (0,0), (-1,-1), "MIDDLE"),
         ("SPAN", (1,5), (3,5)),
         ("BACKGROUND", (0,5), (3,5), bg),
-        ("FONTNAME", (0,5), (1,5), "Helvetica-Bold"),
         ("ALIGN", (1,5), (3,5), "CENTER"),
-        ("TOPPADDING", (0,0), (-1,-1), 6),
-        ("BOTTOMPADDING", (0,0), (-1,-1), 6),
+        ("TOPPADDING", (0,0), (-1,-1), 4),
+        ("BOTTOMPADDING", (0,0), (-1,-1), 4),
+        ("LEFTPADDING", (0,0), (-1,-1), 4),
+        ("RIGHTPADDING", (0,0), (-1,-1), 4),
     ]))
-    elementos += [t, Spacer(1, 0.45*cm), Paragraph("DETALLE DE MOVIMIENTOS", styles["Heading2"])]
+    elementos += [t, Spacer(1, 0.35*cm), Paragraph("DETALLE DE MOVIMIENTOS", h2)]
 
     if detalle.empty:
-        elementos.append(Paragraph("No existen movimientos registrados.", styles["BodyText"]))
+        elementos.append(P("No existen movimientos registrados.", summary_label))
     else:
-        data = [["FECHA", "DESCRIPCION", "PERSONA", "VALE/FACTURA", "VALOR", "SALDO"]]
+        encabezados = ["FECHA", "DESCRIPCIÓN", "PERSONA", "VALE / FACTURA", "VALOR", "SALDO"]
+        data = [[P(x, head) for x in encabezados]]
+
         for _, row in detalle.iterrows():
             data.append([
-                str(row.get("FECHA", "")),
-                str(row.get("DESCRIPCION", "")),
-                str(row.get("PERSONA", "")),
-                str(row.get("VALE/FACTURA", "")),
-                money(row.get("VALOR", 0)),
-                money(row.get("SALDO", 0)),
+                P(str(row.get("FECHA", "")), cell_center),
+                P(str(row.get("DESCRIPCION", "")), cell),
+                P(nombre_para_reporte(row.get("PERSONA", "")), cell),
+                P(str(row.get("VALE/FACTURA", "")), cell_center),
+                P(money(row.get("VALOR", 0)), cell_money),
+                P(money(row.get("SALDO", 0)), cell_money),
             ])
+
+        # Total = 18.2 cm, dentro del ancho útil de A4 vertical con márgenes de 0.8 cm.
         td = Table(
-            data, repeatRows=1,
-            colWidths=[2.5*cm, 7.6*cm, 4.2*cm, 3.5*cm, 3.2*cm, 3.2*cm]
+            data,
+            repeatRows=1,
+            colWidths=[2.0*cm, 5.15*cm, 4.15*cm, 2.45*cm, 2.15*cm, 2.15*cm],
+            hAlign="CENTER"
         )
         td.setStyle(TableStyle([
-            ("BACKGROUND", (0,0), (-1,0), colors.HexColor("#D9EAF7")),
-            ("FONTNAME", (0,0), (-1,0), "Helvetica-Bold"),
-            ("GRID", (0,0), (-1,-1), 0.4, colors.grey),
-            ("ALIGN", (4,1), (-1,-1), "RIGHT"),
-            ("FONTSIZE", (0,0), (-1,-1), 8.5),
+            ("BACKGROUND", (0,0), (-1,0), colors.HexColor("#1F4E78")),
+            ("TEXTCOLOR", (0,0), (-1,0), colors.white),
+            ("GRID", (0,0), (-1,-1), 0.35, colors.HexColor("#8A8A8A")),
             ("VALIGN", (0,0), (-1,-1), "TOP"),
-            ("TOPPADDING", (0,0), (-1,-1), 5),
-            ("BOTTOMPADDING", (0,0), (-1,-1), 5),
+            ("TOPPADDING", (0,0), (-1,-1), 3.5),
+            ("BOTTOMPADDING", (0,0), (-1,-1), 3.5),
+            ("LEFTPADDING", (0,0), (-1,-1), 3),
+            ("RIGHTPADDING", (0,0), (-1,-1), 3),
+            ("ROWBACKGROUNDS", (0,1), (-1,-1), [colors.white, colors.HexColor("#F7F9FB")]),
         ]))
         elementos.append(td)
+
+    elementos.append(Spacer(1, 0.3*cm))
+    elementos.append(Paragraph(
+        "El saldo teórico corresponde al fondo inicial menos los gastos registrados. "
+        "El cuadre compara ese saldo con el efectivo contado, vales pendientes y otros soportes.",
+        ParagraphStyle("NotaPDF", parent=styles["BodyText"], fontSize=6.5,
+                       leading=8, textColor=colors.HexColor("#666666"))
+    ))
 
     doc.build(elementos)
     buffer.seek(0)
