@@ -1,21 +1,22 @@
-# CAJACHICA2026 - Streamlit V2
+# CAJACHICA2026 - Registro Directo + PDF
 
-## Qué hace
-- Permite subir Excel o CSV con plantilla de caja.
-- Detecta SALDO INICIAL.
-- Detecta encabezados FECHA / DESCRIPCION / PERSONA / VALE/FACTURA / VALOR.
-- Calcula automáticamente:
-  - total de egresos
-  - saldo final
-  - saldo fila por fila
-  - diferencias contra el saldo escrito en la plantilla
-- Permite descargar el resultado en Excel.
-- Mantiene una pestaña de cuadre manual.
+## Funciones
+- Registro directo de movimientos.
+- Cálculo automático del saldo.
+- Efectivo contado.
+- Vales pendientes.
+- Otros soportes.
+- Identificación automática:
+  - CAJA CUADRADA
+  - FALTANTE
+  - SOBRANTE
+- Descarga en Excel.
+- Generación de PDF listo para imprimir.
 
-## Para Streamlit Community Cloud
-Subir a la raíz del repositorio:
+## Streamlit Community Cloud
+Sube a la raíz del repositorio:
 - streamlit_app.py
 - requirements.txt
 
-Ruta del archivo principal:
+Ruta principal:
 streamlit_app.py
