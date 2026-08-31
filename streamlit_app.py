@@ -88,6 +88,32 @@ for k, v in defaults.items():
 def money(v):
     return f"${float(v):,.2f}"
 
+def parse_fecha_movimiento(v):
+    """Convierte fechas guardadas a datetime para ordenar correctamente."""
+    try:
+        return pd.to_datetime(v, dayfirst=True, errors="coerce")
+    except:
+        return pd.NaT
+
+def siguiente_numero_vale():
+    """Devuelve el siguiente número correlativo de vale."""
+    numeros = []
+    for m in st.session_state.movimientos:
+        tipo = str(m.get("TIPO_COMPROBANTE", "")).strip().upper()
+        num = str(m.get("VALE/FACTURA", "")).strip()
+        if tipo == "VALE":
+            match = re.search(r"(\d+)", num)
+            if match:
+                numeros.append(int(match.group(1)))
+        elif not tipo and num.upper().startswith("VALE"):
+            match = re.search(r"(\d+)", num)
+            if match:
+                numeros.append(int(match.group(1)))
+    return max(numeros, default=0) + 1
+
+def formatear_vale(n):
+    return f"VALE-{int(n):04d}"
+
 def parse_number(v):
     if pd.isna(v):
         return None
@@ -205,11 +231,14 @@ def importar_planilla(uploaded):
         else:
             fecha_txt = str(fecha_val).strip()
 
+        comp_txt = str(row[c_vale]).strip() if c_vale and not pd.isna(row[c_vale]) else ""
+        tipo_txt = "VALE" if ("VALE" in comp_txt.upper() or re.fullmatch(r"\d{1,6}", comp_txt or "")) else "FACTURA"
         movimientos.append({
             "FECHA": fecha_txt,
             "DESCRIPCION": str(row[c_desc]).strip() if c_desc and not pd.isna(row[c_desc]) else "",
             "PERSONA": str(row[c_persona]).strip() if c_persona and not pd.isna(row[c_persona]) else "",
-            "VALE/FACTURA": str(row[c_vale]).strip() if c_vale and not pd.isna(row[c_vale]) else "",
+            "TIPO_COMPROBANTE": tipo_txt,
+            "VALE/FACTURA": comp_txt,
             "VALOR": float(valor),
         })
 
@@ -511,7 +540,20 @@ with tab_directo:
                 placeholder="Nombre y, si deseas, cargo"
             )
 
-        comprobante = c4.text_input("Vale / Factura", placeholder="Ej. 235")
+        tipo_comprobante = c4.selectbox(
+            "Tipo de comprobante",
+            ["VALE", "FACTURA"]
+        )
+
+        if tipo_comprobante == "VALE":
+            numero_vale = siguiente_numero_vale()
+            comprobante = formatear_vale(numero_vale)
+            st.info(f"🔢 Número asignado automáticamente: **{comprobante}**")
+        else:
+            comprobante = st.text_input(
+                "Número de factura",
+                placeholder="Ej. 001-001-000012345"
+            )
 
         detalle_adicional = st.text_input(
             "Detalle adicional (opcional)",
@@ -546,6 +588,7 @@ with tab_directo:
                     "FECHA": fecha.strftime("%d/%m/%Y"),
                     "DESCRIPCION": descripcion_final,
                     "PERSONA": persona_base,
+                    "TIPO_COMPROBANTE": tipo_comprobante,
                     "VALE/FACTURA": comprobante.strip(),
                     "VALOR": float(valor)
                 })
@@ -654,10 +697,30 @@ if df.empty:
     detalle = pd.DataFrame(columns=["FECHA", "DESCRIPCION", "PERSONA", "VALE/FACTURA", "VALOR", "SALDO"])
     total_gastos = 0.0
 else:
+    # Compatibilidad con movimientos anteriores que no tenían tipo de comprobante
+    if "TIPO_COMPROBANTE" not in df.columns:
+        df["TIPO_COMPROBANTE"] = ""
+    df["TIPO_COMPROBANTE"] = df["TIPO_COMPROBANTE"].fillna("").astype(str)
+
+    for i in df.index:
+        if not df.at[i, "TIPO_COMPROBANTE"].strip():
+            comp = str(df.at[i, "VALE/FACTURA"]) if "VALE/FACTURA" in df.columns else ""
+            df.at[i, "TIPO_COMPROBANTE"] = "VALE" if comp.upper().startswith("VALE") else "FACTURA"
+
     df["VALOR"] = pd.to_numeric(df["VALOR"], errors="coerce").fillna(0.0)
     total_gastos = float(df["VALOR"].sum())
+
+    # El detalle y los reportes se ordenan por FECHA ascendente.
     detalle = df.copy()
+    detalle["__FECHA_ORDEN__"] = detalle["FECHA"].apply(parse_fecha_movimiento)
+    detalle["__ORDEN_ORIGINAL__"] = range(len(detalle))
+    detalle = detalle.sort_values(
+        ["__FECHA_ORDEN__", "__ORDEN_ORIGINAL__"],
+        ascending=[True, True],
+        na_position="last"
+    ).reset_index(drop=True)
     detalle["SALDO"] = float(st.session_state.fondo_inicial) - detalle["VALOR"].cumsum()
+    detalle = detalle.drop(columns=["__FECHA_ORDEN__", "__ORDEN_ORIGINAL__"])
 
 saldo_teorico = float(st.session_state.fondo_inicial) - total_gastos
 soporte_fisico = (
@@ -702,8 +765,10 @@ st.subheader("Movimientos registrados")
 if detalle.empty:
     st.info("Todavía no hay movimientos.")
 else:
+    columnas_vista = ["FECHA", "DESCRIPCION", "PERSONA", "TIPO_COMPROBANTE", "VALE/FACTURA", "VALOR", "SALDO"]
+    columnas_vista = [c for c in columnas_vista if c in detalle.columns]
     st.dataframe(
-        detalle,
+        detalle[columnas_vista],
         use_container_width=True,
         hide_index=True,
         column_config={
@@ -712,16 +777,146 @@ else:
         }
     )
 
-    c_del1, c_del2 = st.columns([3,1])
     opciones = [
         f"{i+1} - {row['FECHA']} - {row['DESCRIPCION']} - {money(row['VALOR'])}"
         for i, row in detalle.iterrows()
     ]
-    seleccionado = c_del1.selectbox("Eliminar movimiento", opciones)
-    if c_del2.button("🗑️ Eliminar", use_container_width=True):
-        idx = opciones.index(seleccionado)
-        st.session_state.movimientos.pop(idx)
-        st.rerun()
+
+    # --------------------------------------------------------
+    # EDITAR MOVIMIENTO EXISTENTE
+    # --------------------------------------------------------
+    with st.expander("✏️ Editar un movimiento"):
+        seleccionado_editar = st.selectbox(
+            "Selecciona el movimiento que deseas modificar",
+            opciones,
+            key="movimiento_editar"
+        )
+        idx_edit = opciones.index(seleccionado_editar)
+        mov_actual = st.session_state.movimientos[idx_edit]
+
+        # Convertir fecha guardada a date para el selector
+        try:
+            fecha_actual = datetime.strptime(
+                str(mov_actual.get("FECHA", "")), "%d/%m/%Y"
+            ).date()
+        except:
+            fecha_actual = date.today()
+
+        with st.form("form_editar_movimiento"):
+            e1, e2 = st.columns(2)
+            edit_fecha = e1.date_input(
+                "Fecha",
+                value=fecha_actual,
+                key="edit_fecha"
+            )
+            edit_descripcion = e2.text_input(
+                "Descripción",
+                value=str(mov_actual.get("DESCRIPCION", "")),
+                key="edit_descripcion"
+            )
+
+            e3, e4 = st.columns(2)
+            edit_persona = e3.text_input(
+                "Persona",
+                value=str(mov_actual.get("PERSONA", "")),
+                key="edit_persona"
+            )
+
+            tipo_actual = str(mov_actual.get("TIPO_COMPROBANTE", "")).strip().upper()
+            if tipo_actual not in ["VALE", "FACTURA"]:
+                comp_actual = str(mov_actual.get("VALE/FACTURA", "")).strip()
+                tipo_actual = "VALE" if comp_actual.upper().startswith("VALE") else "FACTURA"
+
+            edit_tipo = e4.selectbox(
+                "Tipo de comprobante",
+                ["VALE", "FACTURA"],
+                index=0 if tipo_actual == "VALE" else 1,
+                key="edit_tipo"
+            )
+
+            if edit_tipo == "VALE":
+                # El número de vale NO se edita manualmente.
+                actual_num = str(mov_actual.get("VALE/FACTURA", "")).strip()
+                if tipo_actual == "VALE" and actual_num:
+                    edit_comprobante = actual_num
+                else:
+                    edit_comprobante = formatear_vale(siguiente_numero_vale())
+                st.info(f"🔒 Vale automático: **{edit_comprobante}**")
+            else:
+                valor_factura_actual = (
+                    str(mov_actual.get("VALE/FACTURA", "")).strip()
+                    if tipo_actual == "FACTURA"
+                    else ""
+                )
+                edit_comprobante = st.text_input(
+                    "Número de factura",
+                    value=valor_factura_actual,
+                    key="edit_comprobante"
+                )
+
+            edit_valor = st.number_input(
+                "Valor ($)",
+                min_value=0.0,
+                value=float(mov_actual.get("VALOR", 0.0)),
+                step=0.01,
+                format="%.2f",
+                key="edit_valor"
+            )
+
+            guardar_edicion = st.form_submit_button(
+                "💾 Guardar cambios",
+                use_container_width=True
+            )
+
+            if guardar_edicion:
+                if edit_valor <= 0:
+                    st.warning("El valor debe ser mayor a 0.")
+                elif not edit_descripcion.strip():
+                    st.warning("La descripción no puede quedar vacía.")
+                else:
+                    st.session_state.movimientos[idx_edit] = {
+                        "FECHA": edit_fecha.strftime("%d/%m/%Y"),
+                        "DESCRIPCION": edit_descripcion.strip(),
+                        "PERSONA": edit_persona.strip(),
+                        "TIPO_COMPROBANTE": edit_tipo,
+                        "VALE/FACTURA": edit_comprobante.strip(),
+                        "VALOR": float(edit_valor)
+                    }
+
+                    # Si escribió una persona o descripción nueva,
+                    # también se agrega a las listas rápidas.
+                    persona_catalogo = edit_persona.strip()
+                    descripcion_catalogo = edit_descripcion.strip().upper()
+
+                    if (
+                        persona_catalogo
+                        and persona_catalogo not in st.session_state.personas_catalogo
+                    ):
+                        st.session_state.personas_catalogo.append(persona_catalogo)
+
+                    if (
+                        descripcion_catalogo
+                        and descripcion_catalogo not in st.session_state.descripciones_catalogo
+                    ):
+                        st.session_state.descripciones_catalogo.append(descripcion_catalogo)
+
+                    st.success("Movimiento actualizado correctamente.")
+                    st.rerun()
+
+    # --------------------------------------------------------
+    # ELIMINAR MOVIMIENTO
+    # --------------------------------------------------------
+    with st.expander("🗑️ Eliminar un movimiento"):
+        c_del1, c_del2 = st.columns([3,1])
+        seleccionado = c_del1.selectbox(
+            "Selecciona el movimiento",
+            opciones,
+            key="movimiento_eliminar"
+        )
+        if c_del2.button("🗑️ Eliminar", use_container_width=True):
+            idx = opciones.index(seleccionado)
+            st.session_state.movimientos.pop(idx)
+            st.rerun()
 
 # ============================================================
 # DESCARGAS
@@ -816,4 +1011,4 @@ if st.button("🔄 Cerrar y limpiar caja"):
     st.session_state.otros_soportes = 0.0
     st.rerun()
 
-st.caption("CAJACHICA2026 · Registro directo + planilla + respaldo + Excel + PDF")
+st.caption("CAJACHICA2026 · Registro + edición + planilla + respaldo + Excel + PDF")

@@ -1,15 +1,16 @@
-# CAJACHICA2026 - PDF vertical corregido
+# CAJACHICA2026 - Vales automáticos + orden por fecha
 
-Cambios:
-- PDF A4 vertical.
-- Texto de descripción y persona se ajusta en varias líneas.
-- Columnas proporcionadas para evitar superposición.
-- En el PDF se muestra el nombre de la persona sin el cargo para ahorrar espacio; en la app el cargo se conserva.
-- Encabezados compactos y filas alternadas.
-- Mantiene registro directo, listas editables, planilla, respaldo, Excel y PDF.
+Novedades:
+- Movimientos y reportes ordenados por FECHA ascendente.
+- Tipo de comprobante: VALE o FACTURA.
+- VALE: número correlativo automático (VALE-0001, VALE-0002, ...).
+- El número de VALE no se puede editar manualmente.
+- FACTURA: el número sí se puede escribir y editar.
+- La edición de movimientos conserva la regla: vale bloqueado, factura editable.
+- PDF, Excel y tabla usan el orden cronológico.
+- Mantiene carga por planilla, respaldo y restauración.
 
-Subir a GitHub:
-- streamlit_app.py
-- requirements.txt
-
-Ruta de Streamlit: streamlit_app.py
+GitHub:
+- reemplazar streamlit_app.py
+- reemplazar requirements.txt
+- ruta principal: streamlit_app.py
