@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Cuadre Automático de Caja</title>
+  <link rel="stylesheet" href="style.css">
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+</head>
+<body>
+  <main class="container">
+    <section class="hero">
+      <div>
+        <h1>Cuadre Automático de Caja</h1>
+        <p>Conciliación de fondo fijo, Contífico, reposiciones, efectivo y vales pendientes.</p>
+      </div>
+      <button id="resetBtn" class="secondary">Nuevo cuadre</button>
+    </section>
+
+    <section class="card">
+      <h2>1. Datos del fondo</h2>
+      <div class="grid">
+        <label>Nombre de caja
+          <input id="nombreCaja" value="Caja Chica">
+        </label>
+        <label>Fondo fijo ($)
+          <input id="fondoFijo" type="number" step="0.01" value="500.00">
+        </label>
+        <label>Saldo en Contífico ($)
+          <input id="saldoSistema" type="number" step="0.01" value="67.08">
+        </label>
+        <label>Reposición pendiente / actual ($)
+          <input id="reposicion" type="number" step="0.01" value="400.92">
+        </label>
+        <label>Efectivo físico contado ($)
+          <input id="efectivo" type="number" step="0.01" value="0.00">
+        </label>
+        <label>Vales no registrados ($)
+          <input id="vales" type="number" step="0.01" value="96.14">
+        </label>
+        <label>Otros comprobantes pendientes ($)
+          <input id="otros" type="number" step="0.01" value="0.00">
+        </label>
+      </div>
+      <div class="actions">
+        <button id="calcularBtn">Calcular cuadre</button>
+      </div>
+    </section>
+
+    <section class="results">
+      <div class="metric">
+        <span>Saldo teórico</span>
+        <strong id="saldoTeorico">$0.00</strong>
+        <small>Fondo fijo − reposición</small>
+      </div>
+      <div class="metric">
+        <span>Diferencia Contífico</span>
+        <strong id="difSistema">$0.00</strong>
+        <small>Saldo sistema − saldo teórico</small>
+      </div>
+      <div class="metric">
+        <span>Disponible físico</span>
+        <strong id="disponibleFisico">$0.00</strong>
+        <small>Efectivo + vales + otros</small>
+      </div>
+      <div class="metric">
+        <span>Diferencia física</span>
+        <strong id="difFisica">$0.00</strong>
+        <small>Disponible físico − saldo teórico</small>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>2. Diagnóstico automático</h2>
+      <div id="diagnostico" class="diagnostico">Ingresa los valores y pulsa “Calcular cuadre”.</div>
+    </section>
+
+    <section class="card">
+      <h2>3. Buscar asiento o movimiento causante</h2>
+      <p class="muted">Puedes cargar un Excel de mayor contable, reporte por cuenta o detalle de caja. La app intentará identificar columnas y movimientos que coincidan con la diferencia.</p>
+      <input id="archivo" type="file" accept=".xlsx,.xls,.csv">
+      <div class="actions">
+        <button id="analizarArchivoBtn" class="secondary">Analizar archivo</button>
+      </div>
+      <div id="archivoInfo" class="muted"></div>
+      <div class="table-wrap">
+        <table id="tablaHallazgos">
+          <thead>
+            <tr>
+              <th>Fila</th><th>Fecha</th><th>Asiento / Documento</th><th>Detalle</th><th>Debe</th><th>Haber</th><th>Valor</th><th>Coincidencia</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>4. Conclusión para archivo</h2>
+      <textarea id="conclusion" rows="6" readonly></textarea>
+      <div class="actions">
+        <button id="copiarBtn" class="secondary">Copiar conclusión</button>
+        <button id="descargarBtn" class="secondary">Descargar TXT</button>
+      </div>
+    </section>
+  </main>
+  <script src="app.js"></script>
+</body>
+</html>
