@@ -1,21 +1,15 @@
-# CAJACHICA2026 - Versión completa
+# CAJACHICA2026 - PLUS listas rápidas
 
-## Funciones
-- Registro directo de gastos.
-- Carga de planilla Excel/CSV.
-- Puede agregar o reemplazar movimientos existentes.
-- Detecta saldo inicial de la planilla.
-- Cuadre automático.
-- CAJA CUADRADA / FALTANTE / SOBRANTE.
-- Descarga Excel.
-- Descarga PDF imprimible.
-- Descarga respaldo JSON.
-- Restauración completa desde respaldo después de reiniciar Streamlit.
+Novedades:
+- Lista rápida de personas solicitantes basada en el listado de personal entregado.
+- Lista rápida de descripciones basada en los movimientos reales de Caja Chica Administrativa.
+- Persona y descripción siguen siendo editables: puedes escoger o escribir/agregar otra.
+- Catálogos editables: agregar y quitar personas/descripciones.
+- Al cargar planilla, la app aprende personas y descripciones nuevas.
+- El respaldo JSON guarda también las listas personalizadas.
+- Mantiene registro directo, carga Excel/CSV, cuadre, respaldo, Excel y PDF.
 
-## Archivos para GitHub
-Sube a la raíz del repositorio:
-- streamlit_app.py
-- requirements.txt
-
-## Ruta principal en Streamlit
-streamlit_app.py
+Para Streamlit:
+- subir streamlit_app.py
+- subir requirements.txt
+- ruta principal: streamlit_app.py

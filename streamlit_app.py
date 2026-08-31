@@ -20,6 +20,54 @@ st.set_page_config(
     layout="wide"
 )
 
+PERSONAS_INICIALES = [
+    "CAMACHO GUAYGUA BORYS GABRIEL — JEFE FINANCIERO",
+    "GARCIA BOWEN KATHERINE PAOLA — COORD. OPERACIONES",
+    "CAMACHO GUAYGUA DANKO XAVIER — GERENTE DE OPERACIONES",
+    "CAMACHO YANEZ REMIGIO SALOMON — SERVICIO AL CLIENTE",
+    "GUAYGUA REYES NELLI OLIMPIA — GERENTE GENERAL",
+    "CAMACHO GUAYGUA GORKY SANTIAGO — ASISTENTE DE SERVICIOS GENERALES",
+    "ANDRADE BETANCOURT JOHANNA GRACE — AUX. CONTABLE",
+    "ESPINOZA QUEVEDO ERICKA MERCEDES — AUX. ADMINISTRATIVO",
+    "HERNANDEZ MERCHAN DIANA NICOLE — PASANTE ADMINISTRATIVO",
+    "LUNA MENDOZA KLEBER ENRIQUE — COORDINADOR OPERATIVO",
+    "PEÑAHERRERA ALVARADO FREDDY ROMULO — MENSAJERO",
+    "PINEDA BOWEN SKARLETH YAMILETH — AUX. SERVICIOS GENERALES",
+    "RIVAS SALAZAR ASHLEY NICOLE — AUX. SERVICIOS GENERALES",
+    "RIVERA GUILLIN ESTEFANI TAMARA — AUX. ADMINISTRATIVO",
+    "SAA VILLAFUERTE MARIA ELIZABETH — AUX. ADMINISTRATIVO",
+    "TROCCOLI YEPEZ NICOLLE DANIELLE — RRHH",
+    "VARELA BENAVIDES NATHALY PAULETTE — CONTADORA",
+    "VARGAS LUNA ADRIAN ANDRE — AUX. SERVICIOS GENERALES",
+    "VARGAS LUNA BRYAN DAVID — AUX. SERVICIOS GENERALES",
+    "VARGAS LUNA MARIA ALEJANDRA — AUX. SERVICIOS GENERALES",
+    "VARGAS LUNA MARIA BELEN — AUX. CONTABLE",
+]
+
+DESCRIPCIONES_INICIALES = [
+    "ALIMENTACIÓN",
+    "PEAJE",
+    "COMISIÓN BANCARIA / IESS",
+    "PARQUEO",
+    "ENVÍO DE DOCUMENTOS / ROL / DOTACIÓN",
+    "DUPLICADO / COPIA DE LLAVES",
+    "SUMINISTROS DE OFICINA",
+    "MATERIALES",
+    "IMPRESIONES / COPIAS",
+    "NOTARÍA",
+    "CERTIFICACIÓN DE DOCUMENTOS",
+    "TRÁMITES DE TRÁNSITO",
+    "TELÉFONO / RECARGA",
+    "MANTENIMIENTO",
+    "SUMINISTROS DE LIMPIEZA",
+    "ARRIENDO / SERVICIOS DE OFICINA",
+    "AGUA / INTERNET / LUZ",
+    "TRANSPORTE / MOVILIZACIÓN",
+    "FARMACIA / MEDICINAS",
+    "CAFETERÍA / REFRIGERIOS",
+    "OTROS",
+]
+
 # ============================================================
 # ESTADO DE SESIÓN
 # ============================================================
@@ -30,6 +78,8 @@ defaults = {
     "vales_pendientes": 0.00,
     "otros_soportes": 0.00,
     "nombre_caja": "Caja Chica",
+    "personas_catalogo": PERSONAS_INICIALES.copy(),
+    "descripciones_catalogo": DESCRIPCIONES_INICIALES.copy(),
 }
 for k, v in defaults.items():
     if k not in st.session_state:
@@ -178,6 +228,8 @@ def generar_respaldo():
         "vales_pendientes": float(st.session_state.vales_pendientes),
         "otros_soportes": float(st.session_state.otros_soportes),
         "movimientos": st.session_state.movimientos,
+        "personas_catalogo": st.session_state.personas_catalogo,
+        "descripciones_catalogo": st.session_state.descripciones_catalogo,
     }
     return json.dumps(data, ensure_ascii=False, indent=2).encode("utf-8")
 
@@ -195,6 +247,8 @@ def restaurar_respaldo(uploaded):
     st.session_state.vales_pendientes = float(data.get("vales_pendientes", 0.0))
     st.session_state.otros_soportes = float(data.get("otros_soportes", 0.0))
     st.session_state.movimientos = data.get("movimientos", [])
+    st.session_state.personas_catalogo = data.get("personas_catalogo", PERSONAS_INICIALES.copy())
+    st.session_state.descripciones_catalogo = data.get("descripciones_catalogo", DESCRIPCIONES_INICIALES.copy())
 
 # ============================================================
 # PDF
@@ -303,7 +357,7 @@ def generar_pdf(detalle, fondo, total_gastos, saldo_teorico,
 # INTERFAZ
 # ============================================================
 st.title("💵 Caja Chica - Cuadre Automático")
-st.caption("Registro directo, carga por planilla, respaldo recuperable, Excel y PDF.")
+st.caption("Registro rápido con listas editables, carga por planilla, respaldo recuperable, Excel y PDF.")
 
 # ---------- RESTAURAR RESPALDO ARRIBA ----------
 with st.expander("🔄 Recuperar caja desde un respaldo"):
@@ -362,32 +416,118 @@ tab_directo, tab_planilla = st.tabs(["➕ Registro directo", "📤 Cargar planil
 
 with tab_directo:
     st.subheader("Registrar movimiento")
+    st.caption("Selecciona opciones frecuentes para registrar más rápido. Si no existe, elige la opción de escribir/agregar.")
+
     with st.form("form_movimiento", clear_on_submit=True):
         c1, c2 = st.columns(2)
         fecha = c1.date_input("Fecha", value=date.today())
-        descripcion = c2.text_input("Descripción", placeholder="Ej. Compra de llaves")
+
+        opciones_desc = st.session_state.descripciones_catalogo + ["✏️ ESCRIBIR / AGREGAR OTRA DESCRIPCIÓN"]
+        descripcion_sel = c2.selectbox("Descripción", opciones_desc)
+
+        descripcion_manual = ""
+        if descripcion_sel.startswith("✏️"):
+            descripcion_manual = st.text_input(
+                "Escribe la descripción",
+                placeholder="Ej. COMPRA DE LLAVES / REFRIGERIO REUNIÓN"
+            )
 
         c3, c4 = st.columns(2)
-        persona = c3.text_input("Persona", placeholder="Ej. Freddy")
+        opciones_persona = st.session_state.personas_catalogo + ["✏️ ESCRIBIR / AGREGAR OTRA PERSONA"]
+        persona_sel = c3.selectbox("Persona solicitante", opciones_persona)
+
+        persona_manual = ""
+        if persona_sel.startswith("✏️"):
+            persona_manual = st.text_input(
+                "Escribe la persona",
+                placeholder="Nombre y, si deseas, cargo"
+            )
+
         comprobante = c4.text_input("Vale / Factura", placeholder="Ej. 235")
+
+        detalle_adicional = st.text_input(
+            "Detalle adicional (opcional)",
+            placeholder="Ej. Apertura ECU911 Quito / doblada de turno / oficina administrativa"
+        )
 
         valor = st.number_input("Valor del gasto ($)", min_value=0.0, step=0.01, format="%.2f")
         agregar = st.form_submit_button("➕ Registrar gasto", use_container_width=True)
 
         if agregar:
+            descripcion_base = descripcion_manual.strip() if descripcion_sel.startswith("✏️") else descripcion_sel
+            persona_base = persona_manual.strip() if persona_sel.startswith("✏️") else persona_sel
+
+            descripcion_final = descripcion_base
+            if detalle_adicional.strip():
+                descripcion_final = f"{descripcion_base} - {detalle_adicional.strip()}"
+
             if valor <= 0:
                 st.warning("Ingresa un valor mayor a 0.")
-            elif not descripcion.strip():
+            elif not descripcion_base:
                 st.warning("Ingresa una descripción.")
+            elif not persona_base:
+                st.warning("Selecciona o escribe la persona solicitante.")
             else:
+                # Aprende nuevas opciones escritas manualmente
+                if descripcion_sel.startswith("✏️") and descripcion_base not in st.session_state.descripciones_catalogo:
+                    st.session_state.descripciones_catalogo.append(descripcion_base)
+                if persona_sel.startswith("✏️") and persona_base not in st.session_state.personas_catalogo:
+                    st.session_state.personas_catalogo.append(persona_base)
+
                 st.session_state.movimientos.append({
                     "FECHA": fecha.strftime("%d/%m/%Y"),
-                    "DESCRIPCION": descripcion.strip(),
-                    "PERSONA": persona.strip(),
+                    "DESCRIPCION": descripcion_final,
+                    "PERSONA": persona_base,
                     "VALE/FACTURA": comprobante.strip(),
                     "VALOR": float(valor)
                 })
                 st.success("Movimiento registrado.")
+                st.rerun()
+
+    with st.expander("⚙️ Editar listas rápidas de personas y descripciones"):
+        st.write("Estas listas también se guardan dentro del respaldo de la caja.")
+
+        cp1, cp2 = st.columns(2)
+        nueva_persona = cp1.text_input(
+            "Agregar persona a la lista",
+            key="nueva_persona_catalogo",
+            placeholder="NOMBRE — CARGO"
+        )
+        if cp1.button("➕ Agregar persona", use_container_width=True):
+            nueva = nueva_persona.strip().upper()
+            if nueva and nueva not in st.session_state.personas_catalogo:
+                st.session_state.personas_catalogo.append(nueva)
+                st.rerun()
+
+        nueva_desc = cp2.text_input(
+            "Agregar descripción a la lista",
+            key="nueva_desc_catalogo",
+            placeholder="NUEVA DESCRIPCIÓN"
+        )
+        if cp2.button("➕ Agregar descripción", use_container_width=True):
+            nueva = nueva_desc.strip().upper()
+            if nueva and nueva not in st.session_state.descripciones_catalogo:
+                st.session_state.descripciones_catalogo.append(nueva)
+                st.rerun()
+
+        if st.session_state.personas_catalogo:
+            borrar_persona = cp1.selectbox(
+                "Quitar persona de lista rápida",
+                st.session_state.personas_catalogo,
+                key="borrar_persona_catalogo"
+            )
+            if cp1.button("🗑️ Quitar persona", use_container_width=True):
+                st.session_state.personas_catalogo.remove(borrar_persona)
+                st.rerun()
+
+        if st.session_state.descripciones_catalogo:
+            borrar_desc = cp2.selectbox(
+                "Quitar descripción de lista rápida",
+                st.session_state.descripciones_catalogo,
+                key="borrar_desc_catalogo"
+            )
+            if cp2.button("🗑️ Quitar descripción", use_container_width=True):
+                st.session_state.descripciones_catalogo.remove(borrar_desc)
                 st.rerun()
 
 with tab_planilla:
@@ -419,6 +559,15 @@ with tab_planilla:
 
                 if saldo_detectado is not None:
                     st.session_state.fondo_inicial = float(saldo_detectado)
+
+                # Aprender personas y descripciones nuevas de la planilla
+                for m in movs:
+                    p = str(m.get("PERSONA", "")).strip()
+                    d = str(m.get("DESCRIPCION", "")).strip()
+                    if p and p not in st.session_state.personas_catalogo:
+                        st.session_state.personas_catalogo.append(p)
+                    if d and d not in st.session_state.descripciones_catalogo:
+                        st.session_state.descripciones_catalogo.append(d)
 
                 st.success(
                     f"Planilla importada: {len(movs)} movimiento(s). "
