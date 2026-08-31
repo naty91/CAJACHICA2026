@@ -1,14 +1,21 @@
-# CAJACHICA2026 - Streamlit
+# CAJACHICA2026 - Streamlit V2
 
-## Archivos para Streamlit Community Cloud
+## Qué hace
+- Permite subir Excel o CSV con plantilla de caja.
+- Detecta SALDO INICIAL.
+- Detecta encabezados FECHA / DESCRIPCION / PERSONA / VALE/FACTURA / VALOR.
+- Calcula automáticamente:
+  - total de egresos
+  - saldo final
+  - saldo fila por fila
+  - diferencias contra el saldo escrito en la plantilla
+- Permite descargar el resultado en Excel.
+- Mantiene una pestaña de cuadre manual.
 
-Sube estos archivos a la raíz del repositorio:
-
+## Para Streamlit Community Cloud
+Subir a la raíz del repositorio:
 - streamlit_app.py
 - requirements.txt
 
-Luego en Streamlit, en "Ruta del archivo principal", escribe:
-
+Ruta del archivo principal:
 streamlit_app.py
-
-No uses index.html.

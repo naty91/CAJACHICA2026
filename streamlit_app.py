@@ -1,7 +1,10 @@
 
 import streamlit as st
 import pandas as pd
+import numpy as np
 import io
+import re
+from datetime import datetime
 
 st.set_page_config(
     page_title="Cuadre Automático de Caja",
@@ -10,222 +13,279 @@ st.set_page_config(
 )
 
 st.title("💵 Cuadre Automático de Caja")
-st.caption("Conciliación de fondo fijo, saldo en Contífico, reposiciones, efectivo y vales pendientes.")
+st.caption("Carga tu plantilla de caja y la aplicación calcula el cuadre automáticamente.")
 
 def money(x):
-    return f"${x:,.2f}"
+    try:
+        return f"${float(x):,.2f}"
+    except:
+        return "$0.00"
 
-def normalize_columns(df):
-    df = df.copy()
-    df.columns = [str(c).strip().lower() for c in df.columns]
+def parse_number(v):
+    if pd.isna(v):
+        return None
+    if isinstance(v, (int, float, np.number)):
+        return float(v)
+    s = str(v).strip()
+    if not s or s.lower() in ["nan", "none", "-"]:
+        return None
+    s = s.replace("$","").replace(" ","")
+    if "," in s and "." in s:
+        if s.rfind(",") > s.rfind("."):
+            s = s.replace(".","").replace(",",".")
+        else:
+            s = s.replace(",","")
+    elif "," in s:
+        s = s.replace(",",".")
+    s = re.sub(r"[^0-9\.\-]", "", s)
+    try:
+        return float(s)
+    except:
+        return None
+
+def normalize_text(v):
+    return str(v).strip().upper() if not pd.isna(v) else ""
+
+def read_raw(uploaded):
+    name = uploaded.name.lower()
+    if name.endswith(".csv"):
+        uploaded.seek(0)
+        return pd.read_csv(uploaded, header=None)
+    uploaded.seek(0)
+    return pd.read_excel(uploaded, header=None)
+
+def detect_template(raw):
+    """
+    Detecta:
+    - saldo inicial en primeras filas
+    - fila de encabezados con FECHA / DESCRIPCION / PERSONA / VALE/FACTURA / VALOR
+    """
+    saldo_inicial = None
+    header_row = None
+
+    max_scan = min(len(raw), 20)
+    for i in range(max_scan):
+        row = [normalize_text(x) for x in raw.iloc[i].tolist()]
+        joined = " | ".join(row)
+
+        if "SALDO INICIAL" in joined:
+            # Buscar un valor numérico en la misma fila
+            nums = [parse_number(x) for x in raw.iloc[i].tolist()]
+            nums = [x for x in nums if x is not None]
+            if nums:
+                saldo_inicial = nums[-1]
+
+        hits = 0
+        for k in ["FECHA", "DESCRIPCION", "DESCRIPCIÓN", "PERSONA", "VALE/FACTURA", "VALOR"]:
+            if any(k in cell for cell in row):
+                hits += 1
+        if hits >= 3:
+            header_row = i
+            break
+
+    return saldo_inicial, header_row
+
+def build_transactions(raw, header_row):
+    headers = []
+    seen = {}
+    for j, x in enumerate(raw.iloc[header_row].tolist()):
+        name = normalize_text(x)
+        if not name:
+            name = f"COLUMNA_{j+1}"
+        # nombres únicos
+        if name in seen:
+            seen[name] += 1
+            name = f"{name}_{seen[name]}"
+        else:
+            seen[name] = 1
+        headers.append(name)
+
+    df = raw.iloc[header_row+1:].copy()
+    df.columns = headers
+    df = df.dropna(how="all").reset_index(drop=True)
     return df
 
-def find_col(columns, keywords):
-    for c in columns:
-        lc = c.lower()
-        for k in keywords:
-            if k in lc:
+def find_col(cols, variants):
+    cols_norm = {c: normalize_text(c) for c in cols}
+    for c, n in cols_norm.items():
+        for v in variants:
+            if v in n:
                 return c
     return None
 
-with st.sidebar:
-    st.header("Datos del fondo")
-    nombre_caja = st.text_input("Nombre de caja", "Caja Chica")
-    fondo_fijo = st.number_input("Fondo fijo ($)", min_value=0.0, value=500.00, step=0.01, format="%.2f")
-    saldo_sistema = st.number_input("Saldo en Contífico ($)", value=67.08, step=0.01, format="%.2f")
-    reposicion = st.number_input("Reposición pendiente / actual ($)", min_value=0.0, value=400.92, step=0.01, format="%.2f")
-    efectivo = st.number_input("Efectivo físico contado ($)", min_value=0.0, value=0.00, step=0.01, format="%.2f")
-    vales = st.number_input("Vales no registrados ($)", min_value=0.0, value=96.14, step=0.01, format="%.2f")
-    otros = st.number_input("Otros comprobantes pendientes ($)", min_value=0.0, value=0.00, step=0.01, format="%.2f")
+def analyze_uploaded(uploaded):
+    raw = read_raw(uploaded)
+    saldo_inicial, header_row = detect_template(raw)
 
-saldo_teorico = round(fondo_fijo - reposicion, 2)
-dif_sistema = round(saldo_sistema - saldo_teorico, 2)
-disponible_fisico = round(efectivo + vales + otros, 2)
-dif_fisica = round(disponible_fisico - saldo_teorico, 2)
+    if header_row is None:
+        raise ValueError(
+            "No pude detectar la fila de encabezados. La plantilla debe contener "
+            "columnas como FECHA, DESCRIPCION, PERSONA, VALE/FACTURA y VALOR."
+        )
 
-c1, c2, c3, c4 = st.columns(4)
-c1.metric("Saldo teórico", money(saldo_teorico), help="Fondo fijo - reposición")
-c2.metric("Diferencia Contífico", money(dif_sistema))
-c3.metric("Disponible físico", money(disponible_fisico))
-c4.metric("Diferencia física", money(dif_fisica))
+    df = build_transactions(raw, header_row)
 
-st.subheader("Diagnóstico automático")
+    c_fecha = find_col(df.columns, ["FECHA"])
+    c_desc = find_col(df.columns, ["DESCRIPCION", "DESCRIPCIÓN"])
+    c_persona = find_col(df.columns, ["PERSONA"])
+    c_vale = find_col(df.columns, ["VALE/FACTURA", "VALE", "FACTURA"])
+    c_valor = find_col(df.columns, ["VALOR"])
 
-if abs(dif_sistema) < 0.005:
-    st.success("El saldo de Contífico coincide con el saldo teórico.")
-else:
-    sentido = "menor" if dif_sistema < 0 else "mayor"
-    st.error(
-        f"El saldo de Contífico está {sentido} que el saldo teórico en "
-        f"{money(abs(dif_sistema))}. Debe revisarse un asiento, egreso, reposición, reverso o ajuste."
+    if c_valor is None:
+        raise ValueError("No pude detectar la columna VALOR.")
+
+    # Buscar una posible columna de saldo: normalmente la columna posterior a VALOR
+    valor_idx = list(df.columns).index(c_valor)
+    c_saldo = None
+    if valor_idx + 1 < len(df.columns):
+        possible = df.columns[valor_idx + 1]
+        c_saldo = possible
+
+    out = pd.DataFrame()
+    out["FECHA"] = df[c_fecha] if c_fecha else ""
+    out["DESCRIPCION"] = df[c_desc] if c_desc else ""
+    out["PERSONA"] = df[c_persona] if c_persona else ""
+    out["VALE/FACTURA"] = df[c_vale] if c_vale else ""
+    out["VALOR"] = df[c_valor].apply(parse_number)
+
+    # quitar filas sin valor
+    out = out[out["VALOR"].notna()].reset_index(drop=True)
+
+    if saldo_inicial is None:
+        saldo_inicial = 0.0
+
+    out["SALDO_CALCULADO"] = saldo_inicial - out["VALOR"].cumsum()
+
+    saldo_reportado = None
+    if c_saldo is not None:
+        temp = df.loc[df[c_valor].apply(parse_number).notna(), c_saldo].apply(parse_number).reset_index(drop=True)
+        if temp.notna().any():
+            out["SALDO_REPORTADO"] = temp
+            out["DIFERENCIA_FILA"] = (out["SALDO_REPORTADO"] - out["SALDO_CALCULADO"]).round(2)
+            saldo_reportado = temp.dropna().iloc[-1] if temp.dropna().size else None
+
+    total_gastos = float(out["VALOR"].sum())
+    saldo_final = float(saldo_inicial - total_gastos)
+
+    return {
+        "raw": raw,
+        "df": out,
+        "saldo_inicial": float(saldo_inicial),
+        "total_gastos": total_gastos,
+        "saldo_final": saldo_final,
+        "saldo_reportado_final": saldo_reportado
+    }
+
+tab1, tab2 = st.tabs(["📤 Cuadre automático por archivo", "✍️ Cuadre manual"])
+
+with tab1:
+    st.subheader("Subir plantilla de caja")
+    st.write(
+        "La plantilla puede tener la misma estructura que tu ejemplo: "
+        "**SALDO INICIAL** arriba y luego las columnas "
+        "**FECHA, DESCRIPCION, PERSONA, VALE/FACTURA, VALOR y SALDO**."
     )
 
-if vales > 0:
-    st.info(
-        f"Existen {money(vales)} en vales no registrados. "
-        "Se muestran por separado y no deben confundirse con una diferencia contable."
+    uploaded = st.file_uploader(
+        "Selecciona tu archivo Excel o CSV",
+        type=["xlsx", "xls", "csv"],
+        key="plantilla_caja"
     )
 
-if abs(dif_fisica) < 0.005:
-    st.success("El efectivo + vales + otros soportes coincide con el saldo teórico.")
-else:
-    st.warning(
-        f"El soporte físico presenta una diferencia de {money(dif_fisica)} frente al saldo teórico."
-    )
+    if uploaded is not None:
+        try:
+            result = analyze_uploaded(uploaded)
+            df = result["df"]
 
-st.divider()
-st.subheader("Buscar el asiento o movimiento causante")
-st.write(
-    "Sube un Excel o CSV del mayor contable, reporte por cuenta o detalle de caja. "
-    "La aplicación buscará movimientos que coincidan con la diferencia detectada."
-)
+            st.success("Plantilla leída correctamente.")
 
-uploaded = st.file_uploader(
-    "Cargar reporte",
-    type=["xlsx", "xls", "csv"]
-)
+            c1, c2, c3, c4 = st.columns(4)
+            c1.metric("Saldo inicial", money(result["saldo_inicial"]))
+            c2.metric("Total egresos", money(result["total_gastos"]))
+            c3.metric("Saldo final calculado", money(result["saldo_final"]))
+            c4.metric("Movimientos", f"{len(df)}")
 
-if uploaded is not None:
-    try:
-        if uploaded.name.lower().endswith(".csv"):
-            df = pd.read_csv(uploaded)
-        else:
-            xls = pd.ExcelFile(uploaded)
-            frames = []
-            for sheet in xls.sheet_names:
-                temp = pd.read_excel(uploaded, sheet_name=sheet)
-                temp["__hoja__"] = sheet
-                frames.append(temp)
-            df = pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
+            st.subheader("Resultado del cuadre")
 
-        if df.empty:
-            st.warning("El archivo no contiene registros legibles.")
-        else:
-            st.success(f"Archivo cargado: {uploaded.name} — {len(df):,} registros")
-
-            df2 = normalize_columns(df)
-            cols = list(df2.columns)
-
-            col_debe = find_col(cols, ["debe", "debito", "débito"])
-            col_haber = find_col(cols, ["haber", "credito", "crédito"])
-            col_valor = find_col(cols, ["valor", "monto", "importe", "total"])
-            col_fecha = find_col(cols, ["fecha"])
-            col_asiento = find_col(cols, ["asiento", "documento", "comprobante", "numero", "número"])
-            col_detalle = find_col(cols, ["detalle", "descripcion", "descripción", "concepto", "glosa"])
-
-            objetivo = abs(dif_sistema)
-
-            if objetivo < 0.005:
-                st.info("No existe diferencia contable que buscar.")
+            if abs(result["saldo_final"]) < 0.005:
+                st.success("✅ La caja quedó consumida exactamente hasta $0.00.")
+            elif result["saldo_final"] > 0:
+                st.info(f"ℹ️ Según la plantilla deberían quedar {money(result['saldo_final'])} en caja.")
             else:
-                work = pd.DataFrame(index=df2.index)
-                work["fila_excel"] = df2.index + 2
+                st.error(f"❌ Los gastos exceden el fondo disponible en {money(abs(result['saldo_final']))}.")
 
-                for name, col in [
-                    ("fecha", col_fecha),
-                    ("asiento_documento", col_asiento),
-                    ("detalle", col_detalle),
-                ]:
-                    work[name] = df2[col] if col else ""
-
-                work["debe"] = pd.to_numeric(df2[col_debe], errors="coerce").fillna(0) if col_debe else 0.0
-                work["haber"] = pd.to_numeric(df2[col_haber], errors="coerce").fillna(0) if col_haber else 0.0
-                work["valor"] = pd.to_numeric(df2[col_valor], errors="coerce").fillna(0) if col_valor else 0.0
-
-                candidatos = pd.concat(
-                    [
-                        work["debe"].abs(),
-                        work["haber"].abs(),
-                        work["valor"].abs(),
-                        (work["debe"] - work["haber"]).abs()
-                    ],
-                    axis=1
-                )
-                work["distancia"] = candidatos.sub(objetivo).abs().min(axis=1)
-                exactos = work[work["distancia"] <= 0.01].copy()
-
-                if not exactos.empty:
-                    exactos["coincidencia"] = "Coincide con la diferencia"
-                    st.success(f"Se encontraron {len(exactos)} movimiento(s) relacionados con {money(objetivo)}.")
+            if "SALDO_REPORTADO" in df.columns:
+                difs = df[df["DIFERENCIA_FILA"].abs() > 0.01].copy()
+                if difs.empty:
+                    st.success("✅ Todos los saldos fila por fila coinciden con el cálculo automático.")
+                else:
+                    st.error(f"❌ Encontré {len(difs)} fila(s) con diferencia de saldo.")
                     st.dataframe(
-                        exactos[
-                            ["fila_excel","fecha","asiento_documento","detalle","debe","haber","valor","coincidencia"]
-                        ],
+                        difs,
                         use_container_width=True,
                         hide_index=True
                     )
-                else:
-                    st.warning(
-                        f"No encontré un movimiento individual que coincida exactamente con {money(objetivo)}."
-                    )
 
-                    # Busca una combinación simple de dos valores si el archivo no es demasiado grande
-                    valores = []
-                    for i, row in work.iterrows():
-                        candidatos_fila = [abs(row["debe"]), abs(row["haber"]), abs(row["valor"])]
-                        v = max(candidatos_fila)
-                        if v > 0:
-                            valores.append((i, float(v)))
+            st.subheader("Detalle calculado")
+            display = df.copy()
+            display["VALOR"] = display["VALOR"].map(lambda x: round(float(x),2))
+            display["SALDO_CALCULADO"] = display["SALDO_CALCULADO"].map(lambda x: round(float(x),2))
+            if "SALDO_REPORTADO" in display.columns:
+                display["SALDO_REPORTADO"] = display["SALDO_REPORTADO"].map(
+                    lambda x: round(float(x),2) if pd.notna(x) else None
+                )
+                display["DIFERENCIA_FILA"] = display["DIFERENCIA_FILA"].map(
+                    lambda x: round(float(x),2) if pd.notna(x) else None
+                )
+            st.dataframe(display, use_container_width=True, hide_index=True)
 
-                    encontrados = None
-                    if len(valores) <= 2000:
-                        vistos = {}
-                        for idx, v in valores:
-                            faltante = round(objetivo - v, 2)
-                            clave = round(faltante, 2)
-                            if clave in vistos:
-                                encontrados = (vistos[clave], idx)
-                                break
-                            vistos[round(v, 2)] = idx
+            # archivo Excel con resultado
+            output = io.BytesIO()
+            with pd.ExcelWriter(output, engine="openpyxl") as writer:
+                resumen = pd.DataFrame({
+                    "CONCEPTO": ["Saldo inicial", "Total egresos", "Saldo final calculado", "Cantidad de movimientos"],
+                    "VALOR": [result["saldo_inicial"], result["total_gastos"], result["saldo_final"], len(df)]
+                })
+                resumen.to_excel(writer, sheet_name="RESUMEN", index=False)
+                df.to_excel(writer, sheet_name="CUADRE", index=False)
 
-                    if encontrados:
-                        combo = work.loc[list(encontrados)].copy()
-                        combo["coincidencia"] = "Combinación que suma la diferencia"
-                        st.info("Encontré dos movimientos cuya suma coincide aproximadamente con la diferencia.")
-                        st.dataframe(
-                            combo[
-                                ["fila_excel","fecha","asiento_documento","detalle","debe","haber","valor","coincidencia"]
-                            ],
-                            use_container_width=True,
-                            hide_index=True
-                        )
+            st.download_button(
+                "⬇️ Descargar cuadre automático en Excel",
+                data=output.getvalue(),
+                file_name="cuadre_caja_automatico.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            )
 
-            with st.expander("Ver datos cargados"):
-                st.dataframe(df, use_container_width=True)
+        except Exception as e:
+            st.error(f"No pude procesar la plantilla: {e}")
 
-    except Exception as e:
-        st.error(f"No se pudo leer el archivo: {e}")
+with tab2:
+    st.subheader("Cuadre manual")
+    c1, c2, c3 = st.columns(3)
+    fondo = c1.number_input("Fondo fijo ($)", min_value=0.0, value=500.0, step=0.01)
+    sistema = c2.number_input("Saldo en sistema / Contífico ($)", value=0.0, step=0.01)
+    reposicion = c3.number_input("Reposición / gastos ($)", min_value=0.0, value=0.0, step=0.01)
+
+    c4, c5, c6 = st.columns(3)
+    efectivo = c4.number_input("Efectivo contado ($)", min_value=0.0, value=0.0, step=0.01)
+    vales = c5.number_input("Vales pendientes ($)", min_value=0.0, value=0.0, step=0.01)
+    otros = c6.number_input("Otros soportes ($)", min_value=0.0, value=0.0, step=0.01)
+
+    saldo_teorico = fondo - reposicion
+    soporte = efectivo + vales + otros
+    dif_sistema = sistema - saldo_teorico
+    dif_fisica = soporte - saldo_teorico
+
+    a,b,c,d = st.columns(4)
+    a.metric("Saldo teórico", money(saldo_teorico))
+    b.metric("Diferencia sistema", money(dif_sistema))
+    c.metric("Soporte físico", money(soporte))
+    d.metric("Diferencia física", money(dif_fisica))
+
+    if abs(dif_sistema) < 0.005:
+        st.success("El sistema coincide con el saldo teórico.")
+    else:
+        st.error(f"Diferencia contra sistema: {money(dif_sistema)}")
 
 st.divider()
-st.subheader("Conclusión del cuadre")
-
-estado = "CUADRADO" if abs(dif_sistema) < 0.005 else f"REVISAR MOVIMIENTO(S) POR {money(abs(dif_sistema))}"
-
-conclusion = f"""\
-{nombre_caja}
-
-Fondo fijo: {money(fondo_fijo)}
-Reposición pendiente/actual: {money(reposicion)}
-Saldo teórico: {money(saldo_teorico)}
-Saldo Contífico: {money(saldo_sistema)}
-Diferencia contable: {money(dif_sistema)}
-
-Efectivo físico: {money(efectivo)}
-Vales no registrados: {money(vales)}
-Otros comprobantes pendientes: {money(otros)}
-Disponible físico: {money(disponible_fisico)}
-Diferencia física: {money(dif_fisica)}
-
-Diagnóstico: {estado}
-"""
-
-st.text_area("Resumen", conclusion, height=260)
-
-st.download_button(
-    "Descargar conclusión TXT",
-    data=conclusion.encode("utf-8"),
-    file_name="conclusion_cuadre_caja.txt",
-    mime="text/plain"
-)
-
-st.caption("Aplicación de cuadre automático de caja.")
+st.caption("CAJACHICA2026 · Cuadre automático de caja")
