@@ -1,24 +1,14 @@
-# Cuadre Automático de Caja
+# CAJACHICA2026 - Streamlit
 
-Aplicación web sin servidor para conciliar caja chica.
+## Archivos para Streamlit Community Cloud
 
-## Funciones
-- Fondo fijo.
-- Saldo de Contífico.
-- Reposición actual o pendiente.
-- Efectivo físico.
-- Vales no registrados.
-- Otros comprobantes pendientes.
-- Cálculo automático de saldo teórico.
-- Diferencia contable contra Contífico.
-- Diferencia física.
-- Carga de Excel/CSV de movimientos para buscar partidas que coincidan con la diferencia.
-- Generación de conclusión de cuadre.
+Sube estos archivos a la raíz del repositorio:
 
-## Uso
-1. Abrir `index.html` en Chrome o Edge.
-2. Ingresar los saldos.
-3. Pulsar `Calcular cuadre`.
-4. Opcional: cargar el reporte Excel del mayor o detalle de caja y pulsar `Analizar archivo`.
+- streamlit_app.py
+- requirements.txt
 
-Nota: la lectura de Excel usa SheetJS desde CDN, por lo que el navegador debe tener acceso a Internet para leer XLS/XLSX. Los cálculos manuales funcionan sin Internet.
+Luego en Streamlit, en "Ruta del archivo principal", escribe:
+
+streamlit_app.py
+
+No uses index.html.
